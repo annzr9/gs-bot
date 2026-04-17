@@ -15,7 +15,7 @@ const {
 require('dotenv').config();
 const fs = require("fs");
 
-// ================= KEEP ALIVE (Render 24/7) =================
+// ================= KEEP ALIVE =================
 const http = require("http");
 http.createServer((req, res) => {
   res.end("GS Bot Online");
@@ -49,21 +49,19 @@ client.once(Events.ClientReady, () => {
   console.log(`🚀 Logged in as ${client.user.tag}`);
 });
 
-// ================= WELCOME / JOIN SYSTEM =================
+// ================= WELCOME (JOIN) =================
 client.on(Events.GuildMemberAdd, async (member) => {
 
   const channel = member.guild.channels.cache.find(c =>
-    c.name.includes("applications") || c.name.includes("welcome")
+    c.name.includes("welcome")
   );
 
   if (channel) {
-    channel.send(`👋 Welcome <@${member.id}>! Please use /apply to join.`);
+    channel.send(`👋 Welcome <@${member.id}>! Please complete /apply to join.`);
   }
 
   try {
-    await member.send(
-      "👋 Welcome!\nYou must complete /apply to get access to the server."
-    );
+    await member.send("👋 Welcome! You must complete /apply to join the system.");
   } catch (e) {}
 });
 
@@ -113,7 +111,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 client.on(Events.InteractionCreate, async (interaction) => {
 
   if (!interaction.isModalSubmit()) return;
-
   if (interaction.customId !== "apply_form") return;
 
   const db = loadDB();
@@ -200,7 +197,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   const member = await interaction.guild.members.fetch(userId).catch(() => null);
 
-  // ACCEPT
+  // ================= ACCEPT =================
   if (interaction.customId.startsWith("accept_")) {
 
     const app = db.find(x => x.userId === userId);
@@ -209,6 +206,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const role = interaction.guild.roles.cache.find(r => r.name === "MEMBER");
     if (role && member) await member.roles.add(role);
+
+    // ================= CHANGE NICKNAME =================
+    if (member && app) {
+      try {
+        await member.setNickname(app.name);
+      } catch (err) {
+        console.log("Nickname error:", err.message);
+      }
+    }
+
+    // ================= WELCOME CHANNEL MESSAGE =================
+    const welcomeChannel = interaction.guild.channels.cache.find(c =>
+      c.name.includes("welcome")
+    );
+
+    if (welcomeChannel && app) {
+      welcomeChannel.send(
+        `🎉 Welcome ${app.name} | Eng. 🚀`
+      );
+    }
 
     if (member) {
       await member.send("🎉 Your application has been ACCEPTED!");
@@ -220,7 +237,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     });
   }
 
-  // REJECT
+  // ================= REJECT =================
   if (interaction.customId.startsWith("reject_")) {
 
     const app = db.find(x => x.userId === userId);
