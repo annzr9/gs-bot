@@ -21,7 +21,7 @@ http.createServer((req, res) => {
   res.end("GS Bot Online");
 }).listen(process.env.PORT || 3000);
 
-// ================= JSON DATABASE =================
+// ================= DATABASE =================
 const DB_FILE = "./applications.json";
 
 if (!fs.existsSync(DB_FILE)) {
@@ -38,12 +38,33 @@ function saveDB(data) {
 
 // ================= CLIENT =================
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers
+  ]
 });
 
 // ================= READY =================
 client.once(Events.ClientReady, () => {
   console.log(`🚀 Logged in as ${client.user.tag}`);
+});
+
+// ================= WELCOME / JOIN SYSTEM =================
+client.on(Events.GuildMemberAdd, async (member) => {
+
+  const channel = member.guild.channels.cache.find(c =>
+    c.name.includes("applications") || c.name.includes("welcome")
+  );
+
+  if (channel) {
+    channel.send(`👋 Welcome <@${member.id}>! Please use /apply to join.`);
+  }
+
+  try {
+    await member.send(
+      "👋 Welcome!\nYou must complete /apply to get access to the server."
+    );
+  } catch (e) {}
 });
 
 // ================= APPLY COMMAND =================
@@ -97,7 +118,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   const db = loadDB();
 
-  // منع التكرار
   if (db.find(x => x.userId === interaction.user.id)) {
     return interaction.reply({
       content: "❌ You already applied.",
@@ -180,7 +200,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   const member = await interaction.guild.members.fetch(userId).catch(() => null);
 
-  // ================= ACCEPT =================
+  // ACCEPT
   if (interaction.customId.startsWith("accept_")) {
 
     const app = db.find(x => x.userId === userId);
@@ -200,7 +220,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     });
   }
 
-  // ================= REJECT =================
+  // REJECT
   if (interaction.customId.startsWith("reject_")) {
 
     const app = db.find(x => x.userId === userId);
