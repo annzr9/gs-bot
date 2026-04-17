@@ -44,9 +44,36 @@ const client = new Client({
   ]
 });
 
+// ================= CREATE SERVER CHANNELS =================
+async function setupServer(guild) {
+
+  const channels = [
+    { name: "📜・rules", topic: "Engineering Club Rules" },
+    { name: "📢・announcements", topic: "Official Announcements" },
+    { name: "🔗・links", topic: "Club Links" },
+    { name: "👋・welcome", topic: "Welcome Channel" }
+  ];
+
+  for (const ch of channels) {
+    const exists = guild.channels.cache.find(c => c.name === ch.name);
+
+    if (!exists) {
+      await guild.channels.create({
+        name: ch.name,
+        type: 0,
+        topic: ch.topic
+      });
+    }
+  }
+}
+
 // ================= READY =================
-client.once(Events.ClientReady, () => {
+client.once(Events.ClientReady, async () => {
   console.log(`🚀 Logged in as ${client.user.tag}`);
+
+  client.guilds.cache.forEach(guild => {
+    setupServer(guild);
+  });
 });
 
 // ================= WELCOME (JOIN) =================
@@ -207,7 +234,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const role = interaction.guild.roles.cache.find(r => r.name === "MEMBER");
     if (role && member) await member.roles.add(role);
 
-    // ================= CHANGE NICKNAME =================
+    // change nickname
     if (member && app) {
       try {
         await member.setNickname(app.name);
@@ -216,7 +243,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
 
-    // ================= WELCOME CHANNEL MESSAGE =================
+    // ================= WELCOME CHANNEL =================
     const welcomeChannel = interaction.guild.channels.cache.find(c =>
       c.name.includes("welcome")
     );
