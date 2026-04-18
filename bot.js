@@ -1,3 +1,4 @@
+// bot.js
 const {
   Client,
   GatewayIntentBits,
@@ -9,15 +10,21 @@ const {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
-  PermissionsBitField
-} = require('discord.js');
+  PermissionsBitField,
+  ChannelType
+} = require("discord.js");
 
-require('dotenv').config();
+require("dotenv").config();
 const fs = require("fs");
+const http = require("http");
+
+// ================= SAFE MODE =================
+process.on("unhandledRejection", console.error);
+process.on("uncaughtException", console.error);
 
 // ================= KEEP ALIVE =================
-const http = require("http");
 http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
   res.end("GS Bot Online");
 }).listen(process.env.PORT || 3000);
 
@@ -44,243 +51,314 @@ const client = new Client({
   ]
 });
 
-// ================= CREATE SERVER CHANNELS =================
-async function setupServer(guild) {
+// ================= SERVER SETUP =================
+async function ensureChannel(guild, name, topic = "") {
+  let channel = guild.channels.cache.find(c => c.name === name);
 
-  const channels = [
-    { name: "📜・rules", topic: "Engineering Club Rules" },
-    { name: "📢・announcements", topic: "Official Announcements" },
-    { name: "🔗・links", topic: "Club Links" },
-    { name: "👋・welcome", topic: "Welcome Channel" }
-  ];
-
-  for (const ch of channels) {
-    const exists = guild.channels.cache.find(c => c.name === ch.name);
-
-    if (!exists) {
-      await guild.channels.create({
-        name: ch.name,
-        type: 0,
-        topic: ch.topic
-      });
-    }
+  if (!channel) {
+    channel = await guild.channels.create({
+      name,
+      type: ChannelType.GuildText,
+      topic
+    });
   }
+
+  return channel;
+}
+
+async function setupServer(guild) {
+  await ensureChannel(guild, "📥・applications", "Applications");
+  await ensureChannel(guild, "👋・welcome", "Welcome");
+  await ensureChannel(guild, "📜・rules", "Rules");
+  await ensureChannel(guild, "📢・announcements", "Announcements");
+  await ensureChannel(guild, "🔗・links", "Links");
+}
+
+async function sendWelcomeApplyPanel(guild) {
+  const channel = guild.channels.cache.find(c =>
+    c.name.includes("welcome")
+  );
+
+  if (!channel) return;
+
+  const embed = new EmbedBuilder()
+    .setTitle("👋 Welcome to GS Club")
+    .setDescription("To join the club, click the button below and complete your application.")
+    .setColor("Blue");
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("open_apply")
+      .setLabel("Apply Now")
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  await channel.send({
+    embeds: [embed],
+    components: [row]
+  }).catch(() => {});
 }
 
 // ================= READY =================
 client.once(Events.ClientReady, async () => {
   console.log(`🚀 Logged in as ${client.user.tag}`);
 
-  client.guilds.cache.forEach(guild => {
-    setupServer(guild);
-  });
+  for (const guild of client.guilds.cache.values()) {
+    await setupServer(guild);
+    await sendWelcomeApplyPanel(guild);
+  }
 });
 
-// ================= WELCOME (JOIN) =================
+// ================= MEMBER JOIN =================
 client.on(Events.GuildMemberAdd, async (member) => {
-
   const channel = member.guild.channels.cache.find(c =>
     c.name.includes("welcome")
   );
 
   if (channel) {
-    channel.send(`👋 Welcome <@${member.id}>! Please complete /apply to join.`);
+    await channel.send(`👋 Welcome <@${member.id}>`);
   }
 
   try {
-    await member.send("👋 Welcome! You must complete /apply to join the system.");
-  } catch (e) {}
+    await member.send("👋 Welcome! Please go to #welcome and click Apply Now.");
+  } catch {}
 });
 
-// ================= APPLY COMMAND =================
-client.on(Events.InteractionCreate, async (interaction) => {
+// ================= OPEN FORM FUNCTION =================
+async function showApplyModal(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId("apply_form")
+    .setTitle("GS Application Form");
 
-  if (!interaction.isChatInputCommand()) return;
+  const name = new TextInputBuilder()
+    .setCustomId("name")
+    .setLabel("Full Name")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
 
-  if (interaction.commandName === "apply") {
+  const email = new TextInputBuilder()
+    .setCustomId("email")
+    .setLabel("Email")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
 
-    const modal = new ModalBuilder()
-      .setCustomId("apply_form")
-      .setTitle("GS Application Form");
+  const id = new TextInputBuilder()
+    .setCustomId("id")
+    .setLabel("University ID")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
 
-    const name = new TextInputBuilder()
-      .setCustomId("name")
-      .setLabel("Full Name")
-      .setStyle(TextInputStyle.Short);
+  const batch = new TextInputBuilder()
+    .setCustomId("batch")
+    .setLabel("Batch / Year")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
 
-    const email = new TextInputBuilder()
-      .setCustomId("email")
-      .setLabel("Email")
-      .setStyle(TextInputStyle.Short);
-
-    const id = new TextInputBuilder()
-      .setCustomId("id")
-      .setLabel("University ID")
-      .setStyle(TextInputStyle.Short);
-
-    const batch = new TextInputBuilder()
-      .setCustomId("batch")
-      .setLabel("Batch / Year")
-      .setStyle(TextInputStyle.Short);
-
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(name),
-      new ActionRowBuilder().addComponents(email),
-      new ActionRowBuilder().addComponents(id),
-      new ActionRowBuilder().addComponents(batch)
-    );
-
-    return interaction.showModal(modal);
-  }
-});
-
-// ================= FORM SUBMIT =================
-client.on(Events.InteractionCreate, async (interaction) => {
-
-  if (!interaction.isModalSubmit()) return;
-  if (interaction.customId !== "apply_form") return;
-
-  const db = loadDB();
-
-  if (db.find(x => x.userId === interaction.user.id)) {
-    return interaction.reply({
-      content: "❌ You already applied.",
-      ephemeral: true
-    });
-  }
-
-  const name = interaction.fields.getTextInputValue("name");
-  const email = interaction.fields.getTextInputValue("email");
-  const id = interaction.fields.getTextInputValue("id");
-  const batch = interaction.fields.getTextInputValue("batch");
-
-  const newApp = {
-    userId: interaction.user.id,
-    name,
-    email,
-    universityId: id,
-    batch,
-    status: "PENDING",
-    createdAt: new Date().toISOString()
-  };
-
-  db.push(newApp);
-  saveDB(db);
-
-  const channel = interaction.guild.channels.cache.find(c =>
-    c.name.includes("applications")
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(name),
+    new ActionRowBuilder().addComponents(email),
+    new ActionRowBuilder().addComponents(id),
+    new ActionRowBuilder().addComponents(batch)
   );
 
-  if (!channel) {
-    return interaction.reply({
-      content: "❌ Applications channel not found",
-      ephemeral: true
-    });
-  }
+  await interaction.showModal(modal);
+}
 
-  const embed = new EmbedBuilder()
-    .setTitle("📥 New Application")
-    .setColor("Yellow")
-    .addFields(
-      { name: "Name", value: name },
-      { name: "Email", value: email },
-      { name: "ID", value: id },
-      { name: "Batch", value: batch },
-      { name: "User", value: `<@${interaction.user.id}>` },
-      { name: "Status", value: "PENDING ⏳" }
-    );
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`accept_${interaction.user.id}`)
-      .setLabel("Accept")
-      .setStyle(ButtonStyle.Success),
-
-    new ButtonBuilder()
-      .setCustomId(`reject_${interaction.user.id}`)
-      .setLabel("Reject")
-      .setStyle(ButtonStyle.Danger)
-  );
-
-  await channel.send({ embeds: [embed], components: [row] });
-
-  return interaction.reply({
-    content: "✅ Application submitted successfully",
-    ephemeral: true
-  });
-});
-
-// ================= ACCEPT / REJECT =================
+// ================= ONE INTERACTION HANDLER =================
 client.on(Events.InteractionCreate, async (interaction) => {
+  try {
 
-  if (!interaction.isButton()) return;
+    // ========= SLASH COMMAND =========
+    if (interaction.isChatInputCommand()) {
 
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: "Admin only", ephemeral: true });
-  }
+      if (interaction.commandName === "apply") {
+        return await showApplyModal(interaction);
+      }
 
-  const db = loadDB();
-  const userId = interaction.customId.split("_")[1];
+      if (interaction.commandName === "setup") {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+          return interaction.reply({
+            content: "Admin only",
+            ephemeral: true
+          });
+        }
 
-  const member = await interaction.guild.members.fetch(userId).catch(() => null);
+        await setupServer(interaction.guild);
 
-  // ================= ACCEPT =================
-  if (interaction.customId.startsWith("accept_")) {
-
-    const app = db.find(x => x.userId === userId);
-    if (app) app.status = "ACCEPTED";
-    saveDB(db);
-
-    const role = interaction.guild.roles.cache.find(r => r.name === "MEMBER");
-    if (role && member) await member.roles.add(role);
-
-    // change nickname
-    if (member && app) {
-      try {
-        await member.setNickname(app.name);
-      } catch (err) {
-        console.log("Nickname error:", err.message);
+        return interaction.reply({
+          content: "✅ GS Server Setup Completed",
+          ephemeral: true
+        });
       }
     }
 
-    // ================= WELCOME CHANNEL =================
-    const welcomeChannel = interaction.guild.channels.cache.find(c =>
-      c.name.includes("welcome")
-    );
+    // ========= BUTTONS =========
+    if (interaction.isButton()) {
 
-    if (welcomeChannel && app) {
-      welcomeChannel.send(
-        `🎉 Welcome ${app.name} | Eng. 🚀`
+      // open apply form
+      if (interaction.customId === "open_apply") {
+        return await showApplyModal(interaction);
+      }
+
+      // admin check for accept/reject
+      if (
+        interaction.customId.startsWith("accept_") ||
+        interaction.customId.startsWith("reject_")
+      ) {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+          return interaction.reply({
+            content: "Admin only",
+            ephemeral: true
+          });
+        }
+
+        const db = loadDB();
+        const userId = interaction.customId.split("_")[1];
+        const member = await interaction.guild.members.fetch(userId).catch(() => null);
+        const app = db.find(x => x.userId === userId);
+
+        if (!app) {
+          return interaction.reply({
+            content: "Application not found.",
+            ephemeral: true
+          });
+        }
+
+        // ACCEPT
+        if (interaction.customId.startsWith("accept_")) {
+          app.status = "ACCEPTED";
+          saveDB(db);
+
+          let role = interaction.guild.roles.cache.find(r => r.name === "MEMBER");
+          if (role && member) await member.roles.add(role).catch(() => {});
+
+          if (member) {
+            await member.setNickname(app.name).catch(() => {});
+            await member.send("🎉 Your application has been ACCEPTED!").catch(() => {});
+          }
+
+          const welcomeChannel = interaction.guild.channels.cache.find(c =>
+            c.name.includes("welcome")
+          );
+
+          if (welcomeChannel) {
+            await welcomeChannel.send(`🎉 Welcome ${app.name} | Eng. 🚀`);
+          }
+
+          return interaction.reply({
+            content: `✅ Accepted <@${userId}>`,
+            ephemeral: true
+          });
+        }
+
+        // REJECT
+        if (interaction.customId.startsWith("reject_")) {
+          app.status = "REJECTED";
+          saveDB(db);
+
+          if (member) {
+            await member.send("❌ Your application has been REJECTED.").catch(() => {});
+          }
+
+          return interaction.reply({
+            content: `❌ Rejected <@${userId}>`,
+            ephemeral: true
+          });
+        }
+      }
+    }
+
+    // ========= MODAL SUBMIT =========
+    if (interaction.isModalSubmit()) {
+
+      if (interaction.customId !== "apply_form") return;
+
+      const db = loadDB();
+
+      if (db.find(x => x.userId === interaction.user.id)) {
+        return interaction.reply({
+          content: "❌ You already applied.",
+          ephemeral: true
+        });
+      }
+
+      const name = interaction.fields.getTextInputValue("name");
+      const email = interaction.fields.getTextInputValue("email");
+      const id = interaction.fields.getTextInputValue("id");
+      const batch = interaction.fields.getTextInputValue("batch");
+
+      const newApp = {
+        userId: interaction.user.id,
+        name,
+        email,
+        universityId: id,
+        batch,
+        status: "PENDING",
+        createdAt: new Date().toISOString()
+      };
+
+      db.push(newApp);
+      saveDB(db);
+
+      const channel = interaction.guild.channels.cache.find(c =>
+        c.name.includes("applications")
       );
+
+      if (!channel) {
+        return interaction.reply({
+          content: "❌ Applications channel not found.",
+          ephemeral: true
+        });
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle("📥 New Application")
+        .setColor("Yellow")
+        .addFields(
+          { name: "Name", value: name },
+          { name: "Email", value: email },
+          { name: "ID", value: id },
+          { name: "Batch", value: batch },
+          { name: "User", value: `<@${interaction.user.id}>` },
+          { name: "Status", value: "PENDING ⏳" }
+        );
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`accept_${interaction.user.id}`)
+          .setLabel("Accept")
+          .setStyle(ButtonStyle.Success),
+
+        new ButtonBuilder()
+          .setCustomId(`reject_${interaction.user.id}`)
+          .setLabel("Reject")
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await channel.send({
+        embeds: [embed],
+        components: [row]
+      });
+
+      return interaction.reply({
+        content: "✅ Application submitted successfully",
+        ephemeral: true
+      });
     }
 
-    if (member) {
-      await member.send("🎉 Your application has been ACCEPTED!");
+  } catch (error) {
+    console.error(error);
+
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: "❌ Unexpected error.",
+        ephemeral: true
+      }).catch(() => {});
     }
-
-    return interaction.reply({
-      content: `✅ Accepted <@${userId}>`,
-      ephemeral: true
-    });
-  }
-
-  // ================= REJECT =================
-  if (interaction.customId.startsWith("reject_")) {
-
-    const app = db.find(x => x.userId === userId);
-    if (app) app.status = "REJECTED";
-    saveDB(db);
-
-    if (member) {
-      await member.send("❌ Your application has been REJECTED.");
-    }
-
-    return interaction.reply({
-      content: `❌ Rejected <@${userId}>`,
-      ephemeral: true
-    });
   }
 });
 
 // ================= LOGIN =================
-client.login(process.env.TOKEN);
+client.login(process.env.TOKEN)
+  .then(() => console.log("✅ Discord Connected"))
+  .catch(err => console.error("❌ Login Error:", err));
