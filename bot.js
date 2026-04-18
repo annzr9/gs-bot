@@ -82,7 +82,7 @@ async function sendWelcomeApplyPanel(guild) {
   if (!channel) return;
 
   const embed = new EmbedBuilder()
-    .setTitle("👋 Welcome to GS Club")
+    .setTitle("👋 Welcome to MMEC Club")
     .setDescription("To join the club, click the button below and complete your application.")
     .setColor("Blue");
 
