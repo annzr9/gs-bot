@@ -128,7 +128,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
 async function showApplyModal(interaction) {
   const modal = new ModalBuilder()
     .setCustomId("apply_form")
-    .setTitle("GS Application Form");
+    .setTitle("MMEC Application Form");
 
   const name = new TextInputBuilder()
     .setCustomId("name")
@@ -186,7 +186,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await setupServer(interaction.guild);
 
         return interaction.reply({
-          content: "✅ GS Server Setup Completed",
+          content: "✅ MMEC Server Setup Completed",
           ephemeral: true
         });
       }
