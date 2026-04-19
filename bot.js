@@ -79,17 +79,14 @@ async function ensureChannel(guild, name, topic = "") {
 async function setupServer(guild) {
   await ensureChannel(guild, "📥・applications", "Applications");
   await ensureChannel(guild, "👋・welcome", "Welcome");
-  await ensureChannel(guild, "📜・rules", "Server Rules");
+  await ensureChannel(guild, "📜・rules", "Rules");
   await ensureChannel(guild, "📢・announcements", "Announcements");
   await ensureChannel(guild, "🔗・links", "Links");
 }
 
 // ================= APPLY PANEL =================
 async function sendApplyPanel(guild) {
-  const channel = guild.channels.cache.find(c =>
-    c.name.includes("welcome")
-  );
-
+  const channel = guild.channels.cache.find(c => c.name.includes("welcome"));
   if (!channel) return;
 
   const embed = new EmbedBuilder()
@@ -155,12 +152,10 @@ client.once(Events.ClientReady, async () => {
   const setStatus = () => {
     client.user.setPresence({
       status: "online",
-      activities: [
-        {
-          name: "MMEC Club 24/7",
-          type: 3
-        }
-      ]
+      activities: [{
+        name: "MMEC Club 24/7",
+        type: 3
+      }]
     }).catch(() => {});
   };
 
@@ -173,38 +168,59 @@ client.once(Events.ClientReady, async () => {
   }
 });
 
-// ================= JOIN =================
+// ================= JOIN SYSTEM (WELCOME + DM + APPLY) =================
 client.on(Events.GuildMemberAdd, async (member) => {
+
   const channel = member.guild.channels.cache.find(c =>
     c.name.includes("welcome")
   );
 
-  channel?.send(`👋 Welcome <@${member.id}>`);
+  // ✔ Welcome channel
+  if (channel) {
+    const embed = new EmbedBuilder()
+      .setTitle("👋 Welcome to MMEC Club")
+      .setDescription(`<@${member.id}> welcome! Click APPLY below.`)
+      .setColor("Blue");
 
-  member.send("👋 Welcome to MMEC Club! Go to #welcome and apply.").catch(() => {});
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("open_apply")
+        .setLabel("Apply Now 🚀")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    await channel.send({
+      content: `<@${member.id}>`,
+      embeds: [embed],
+      components: [row]
+    }).catch(() => {});
+  }
+
+  // ✔ DM
+  try {
+    const dmEmbed = new EmbedBuilder()
+      .setTitle("👋 Welcome to MMEC")
+      .setDescription("Click below to apply instantly.")
+      .setColor("Green");
+
+    const dmRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("open_apply")
+        .setLabel("Apply Now 🚀")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    await member.send({
+      embeds: [dmEmbed],
+      components: [dmRow]
+    });
+
+  } catch {}
 });
 
 // ================= INTERACTIONS =================
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
-
-    // ===== SLASH =====
-    if (interaction.isChatInputCommand()) {
-
-      if (interaction.commandName === "apply") {
-        return interaction.showModal(buildModal());
-      }
-
-      if (interaction.commandName === "setup") {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-          return interaction.reply({ content: "Admin only.", ephemeral: true });
-        }
-
-        await setupServer(interaction.guild);
-
-        return interaction.reply({ content: "✅ Setup completed", ephemeral: true });
-      }
-    }
 
     // ===== BUTTON =====
     if (interaction.isButton()) {
@@ -213,8 +229,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.showModal(buildModal());
       }
 
-      if (interaction.customId.startsWith("accept_") ||
-          interaction.customId.startsWith("reject_")) {
+      if (
+        interaction.customId.startsWith("accept_") ||
+        interaction.customId.startsWith("reject_")
+      ) {
 
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
           return interaction.reply({ content: "Admin only", ephemeral: true });
