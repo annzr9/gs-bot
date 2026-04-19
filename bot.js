@@ -18,14 +18,14 @@ require("dotenv").config();
 const fs = require("fs");
 const http = require("http");
 
-// ================= SAFE MODE =================
+// ================= ERROR PROTECTION =================
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
 
 // ================= KEEP ALIVE =================
 http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("GS Bot Online");
+  res.end("MMEC Bot Online");
 }).listen(process.env.PORT || 3000);
 
 // ================= DATABASE =================
@@ -36,7 +36,11 @@ if (!fs.existsSync(DB_FILE)) {
 }
 
 function loadDB() {
-  return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+  try {
+    return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+  } catch {
+    return [];
+  }
 }
 
 function saveDB(data) {
@@ -51,7 +55,7 @@ const client = new Client({
   ]
 });
 
-// ================= SERVER SETUP =================
+// ================= CHANNEL SETUP =================
 async function ensureChannel(guild, name, topic = "") {
   let channel = guild.channels.cache.find(c => c.name === name);
 
@@ -69,12 +73,13 @@ async function ensureChannel(guild, name, topic = "") {
 async function setupServer(guild) {
   await ensureChannel(guild, "📥・applications", "Applications");
   await ensureChannel(guild, "👋・welcome", "Welcome");
-  await ensureChannel(guild, "📜・rules", "Rules");
-  await ensureChannel(guild, "📢・announcements", "Announcements");
-  await ensureChannel(guild, "🔗・links", "Links");
+  await ensureChannel(guild, "📜・rules", "Server Rules");
+  await ensureChannel(guild, "📢・announcements", "Official Announcements");
+  await ensureChannel(guild, "🔗・links", "Club Links");
 }
 
-async function sendWelcomeApplyPanel(guild) {
+// ================= APPLY PANEL =================
+async function sendApplyPanel(guild) {
   const channel = guild.channels.cache.find(c =>
     c.name.includes("welcome")
   );
@@ -83,7 +88,9 @@ async function sendWelcomeApplyPanel(guild) {
 
   const embed = new EmbedBuilder()
     .setTitle("👋 Welcome to MMEC Club")
-    .setDescription("To join the club, click the button below and complete your application.")
+    .setDescription(
+      "To become an official member, click the button below and complete your application."
+    )
     .setColor("Blue");
 
   const row = new ActionRowBuilder().addComponents(
@@ -105,11 +112,11 @@ client.once(Events.ClientReady, async () => {
 
   for (const guild of client.guilds.cache.values()) {
     await setupServer(guild);
-    await sendWelcomeApplyPanel(guild);
+    await sendApplyPanel(guild);
   }
 });
 
-// ================= MEMBER JOIN =================
+// ================= JOIN MEMBER =================
 client.on(Events.GuildMemberAdd, async (member) => {
   const channel = member.guild.channels.cache.find(c =>
     c.name.includes("welcome")
@@ -120,12 +127,14 @@ client.on(Events.GuildMemberAdd, async (member) => {
   }
 
   try {
-    await member.send("👋 Welcome! Please go to #welcome and click Apply Now.");
+    await member.send(
+      "👋 Welcome to MMEC Club!\nGo to #welcome and click Apply Now."
+    );
   } catch {}
 });
 
-// ================= OPEN FORM FUNCTION =================
-async function showApplyModal(interaction) {
+// ================= OPEN MODAL =================
+async function openApplyModal(interaction) {
   const modal = new ModalBuilder()
     .setCustomId("apply_form")
     .setTitle("MMEC Application Form");
@@ -164,21 +173,22 @@ async function showApplyModal(interaction) {
   await interaction.showModal(modal);
 }
 
-// ================= ONE INTERACTION HANDLER =================
+// ================= INTERACTIONS =================
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
 
-    // ========= SLASH COMMAND =========
+    // ===== Slash Commands =====
     if (interaction.isChatInputCommand()) {
 
       if (interaction.commandName === "apply") {
-        return await showApplyModal(interaction);
+        return openApplyModal(interaction);
       }
 
       if (interaction.commandName === "setup") {
+
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
           return interaction.reply({
-            content: "Admin only",
+            content: "Admin only.",
             ephemeral: true
           });
         }
@@ -186,31 +196,34 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await setupServer(interaction.guild);
 
         return interaction.reply({
-          content: "✅ MMEC Server Setup Completed",
+          content: "✅ Server setup completed.",
           ephemeral: true
         });
       }
     }
 
-    // ========= BUTTONS =========
+    // ===== Buttons =====
     if (interaction.isButton()) {
 
-      // open apply form
+      // Apply button
       if (interaction.customId === "open_apply") {
-        return await showApplyModal(interaction);
+        return openApplyModal(interaction);
       }
 
-      // admin check for accept/reject
+      // Accept / Reject
       if (
         interaction.customId.startsWith("accept_") ||
         interaction.customId.startsWith("reject_")
       ) {
+
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
           return interaction.reply({
-            content: "Admin only",
+            content: "Admin only.",
             ephemeral: true
           });
         }
+
+        await interaction.deferReply({ ephemeral: true });
 
         const db = loadDB();
         const userId = interaction.customId.split("_")[1];
@@ -218,14 +231,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const app = db.find(x => x.userId === userId);
 
         if (!app) {
-          return interaction.reply({
-            content: "Application not found.",
-            ephemeral: true
-          });
+          return interaction.editReply("Application not found.");
         }
 
         // ACCEPT
         if (interaction.customId.startsWith("accept_")) {
+
           app.status = "ACCEPTED";
           saveDB(db);
 
@@ -245,14 +256,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
             await welcomeChannel.send(`🎉 Welcome ${app.name} | Eng. 🚀`);
           }
 
-          return interaction.reply({
-            content: `✅ Accepted <@${userId}>`,
-            ephemeral: true
-          });
+          return interaction.editReply(`✅ Accepted <@${userId}>`);
         }
 
         // REJECT
         if (interaction.customId.startsWith("reject_")) {
+
           app.status = "REJECTED";
           saveDB(db);
 
@@ -260,26 +269,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
             await member.send("❌ Your application has been REJECTED.").catch(() => {});
           }
 
-          return interaction.reply({
-            content: `❌ Rejected <@${userId}>`,
-            ephemeral: true
-          });
+          return interaction.editReply(`❌ Rejected <@${userId}>`);
         }
       }
     }
 
-    // ========= MODAL SUBMIT =========
+    // ===== Modal Submit =====
     if (interaction.isModalSubmit()) {
 
       if (interaction.customId !== "apply_form") return;
 
+      await interaction.deferReply({ ephemeral: true });
+
       const db = loadDB();
 
       if (db.find(x => x.userId === interaction.user.id)) {
-        return interaction.reply({
-          content: "❌ You already applied.",
-          ephemeral: true
-        });
+        return interaction.editReply("❌ You already applied.");
       }
 
       const name = interaction.fields.getTextInputValue("name");
@@ -305,10 +310,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       );
 
       if (!channel) {
-        return interaction.reply({
-          content: "❌ Applications channel not found.",
-          ephemeral: true
-        });
+        return interaction.editReply("❌ Applications channel not found.");
       }
 
       const embed = new EmbedBuilder()
@@ -340,10 +342,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         components: [row]
       });
 
-      return interaction.reply({
-        content: "✅ Application submitted successfully",
-        ephemeral: true
-      });
+      return interaction.editReply("✅ Application submitted successfully.");
     }
 
   } catch (error) {
