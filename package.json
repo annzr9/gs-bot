@@ -1,12 +1,17 @@
 {
-  "name": "gs-enterprise-bot",
+  "name": "gs-bot",
   "version": "1.0.0",
+  "description": "MMEC Club Discord Bot",
   "main": "bot.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node bot.js",
+    "deploy": "node deployCommands.js"
+  },
+  "engines": {
+    "node": "20.x"
   },
   "dependencies": {
-    "discord.js": "^14.14.1",
+    "discord.js": "^14.15.3",
     "dotenv": "^16.4.5"
   }
 }
